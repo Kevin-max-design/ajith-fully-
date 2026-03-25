@@ -1,259 +1,453 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
+import { useNavigate } from "react-router";
 import { supabase } from "../../lib/supabase";
-import { motion } from "motion/react";
-import {
-  LayoutGrid, Bookmark, Send, Handshake, MessageSquare, User,
-  Bell, Menu, MapPin, Building2, DollarSign,
-  Heart, Clock, Search, Cpu
-} from "lucide-react";
 import { GlassCard } from "../components/GlassCard";
 import { DashboardSidebar } from "../components/DashboardSidebar";
+import { useAuth } from "../components/AuthContext";
 
 const sidebarItems = [
-  { icon: LayoutGrid, label: "Startup Feed", id: "feed" },
-  { icon: Bookmark, label: "Saved Startups", id: "saved" },
-  { icon: Send, label: "Requests Sent", id: "requests" },
-  { icon: Handshake, label: "Matches", id: "matches" },
-  { icon: MessageSquare, label: "Messages", id: "messages" },
-  { icon: User, label: "Profile", id: "profile" },
+  { icon: "grid_view", label: "Startup Feed", id: "feed" },
+  { icon: "bookmark", label: "Saved", id: "saved" },
+  { icon: "rocket_launch", label: "Requests Sent", id: "requests" },
+  { icon: "query_stats", label: "Matches", id: "matches" },
+  { icon: "mail", label: "Messages", id: "messages" },
+  { icon: "account_circle", label: "Profile", id: "profile" },
 ];
 
-function MatchScoreRing({ score }: { score: number }) {
-  const circumference = 2 * Math.PI * 18;
-  const offset = circumference - (score / 100) * circumference;
-  const color = score >= 90 ? "#6C8EFF" : score >= 75 ? "#38BDF8" : score >= 60 ? "#93B4FF" : "#8A8A9A";
-
+function StartupCard({ startup, onSave, onRequest, requestedIds }: { startup: any; onSave: (id: string) => void; onRequest: (id: string) => void; requestedIds: Set<string> }) {
+  const alreadyRequested = requestedIds.has(startup.id);
   return (
-    <div className="relative w-12 h-12 flex items-center justify-center">
-      <svg className="w-12 h-12 -rotate-90" viewBox="0 0 40 40">
-        <circle cx="20" cy="20" r="18" fill="none" stroke="rgba(108,142,255,0.06)" strokeWidth="2" />
-        <motion.circle cx="20" cy="20" r="18" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeDasharray={circumference} initial={{ strokeDashoffset: circumference }} animate={{ strokeDashoffset: offset }} transition={{ duration: 0.8, delay: 0.2 }} />
-      </svg>
-      <span className="absolute" style={{ fontSize: "11px", fontWeight: 700, color }}>{score}</span>
+    <div className="glass-card ghost-border p-6 rounded-xl space-y-5 hover:bg-[rgba(255,255,255,0.05)] transition-all group">
+      {/* Tags */}
+      <div className="flex flex-wrap gap-2">
+        <span className="px-2 py-1 rounded bg-[rgba(255,255,255,0.05)] font-label text-[10px] font-medium text-white/60 uppercase tracking-widest">{startup.industry}</span>
+        <span className="px-2 py-1 rounded bg-[rgba(255,255,255,0.05)] font-label text-[10px] font-medium text-white/60 uppercase tracking-widest">{startup.stage}</span>
+      </div>
+      {/* Pitch */}
+      <p className="font-body text-[0.875rem] text-white/60 leading-relaxed line-clamp-3">{startup.pitch}</p>
+      {/* Tags list */}
+      {startup.tags?.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {startup.tags.map((tag: string) => (
+            <span key={tag} className="px-2 py-0.5 rounded bg-[rgba(255,255,255,0.03)] text-white/40 text-[10px]">{tag}</span>
+          ))}
+        </div>
+      )}
+      {/* Stats */}
+      <div className="flex justify-between items-center">
+        <div>
+          <p className="font-label text-[10px] uppercase tracking-[0.1em] text-white/40">Funding Needed</p>
+          <p className="text-lg font-headline font-bold text-white">{startup.fundingNeeded}</p>
+        </div>
+        <div className="text-right">
+          <p className="font-label text-[10px] uppercase tracking-[0.1em] text-white/40">Location</p>
+          <p className="font-body text-sm text-white/80">{startup.location}</p>
+        </div>
+      </div>
+      {/* Actions */}
+      <div className="flex items-center gap-2">
+        <button
+          onClick={() => !alreadyRequested && onRequest(startup.id)}
+          disabled={alreadyRequested}
+          className={`flex-1 py-3 rounded-full font-label text-[10px] uppercase tracking-[0.1em] font-bold transition-all ${
+            alreadyRequested
+              ? "bg-[rgba(255,255,255,0.05)] text-white/30 cursor-not-allowed"
+              : "monolith-gradient text-black inner-glow hover:opacity-90"
+          }`}
+        >
+          {alreadyRequested ? "Request Sent" : "Request Access"}
+        </button>
+        <button
+          onClick={() => onSave(startup.id)}
+          className={`w-10 h-10 rounded-full flex items-center justify-center transition-all ghost-border ${startup.saved ? "text-white bg-[rgba(255,255,255,0.1)]" : "text-white/40 hover:text-white hover:bg-[rgba(255,255,255,0.05)]"}`}
+        >
+          <span className="material-symbols-outlined text-[18px]">{startup.saved ? "bookmark" : "bookmark_border"}</span>
+        </button>
+      </div>
     </div>
   );
 }
 
-function StartupCard({ startup, onSave, onRequest }: { startup: any; onSave: (id: string) => void; onRequest: (id: string) => void }) {
-  return (
-    <GlassCard>
-      <div className="flex items-start justify-between mb-4">
-        <div>
-          <div className="flex items-center gap-2 mb-1.5">
-            <span className="text-[#444]" style={{ fontSize: "11px", fontFamily: "monospace" }}>{startup.id}</span>
-            <span className="px-2 py-0.5 rounded text-[#6C8EFF]" style={{ fontSize: "10px", fontWeight: 600, background: "rgba(108,142,255,0.1)" }}>{startup.stage}</span>
-          </div>
-          <div className="flex items-center gap-1.5 text-[#8A8A9A]" style={{ fontSize: "13px", fontWeight: 500 }}><Building2 size={13} /> {startup.industry}</div>
+function InvestorMessagesPanel({ userId, matchedUsers }: { userId: string; matchedUsers: any[] }) {
+  const [selectedUser, setSelectedUser] = useState<any>(null);
+  const [messages, setMessages] = useState<any[]>([]);
+  const [newMsg, setNewMsg] = useState("");
+  const [sending, setSending] = useState(false);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!selectedUser) return;
+    const loadMessages = async () => {
+      const { data } = await supabase.from("messages").select("*")
+        .or(`and(sender_id.eq.${userId},receiver_id.eq.${selectedUser.founderId}),and(sender_id.eq.${selectedUser.founderId},receiver_id.eq.${userId})`)
+        .order("created_at", { ascending: true });
+      setMessages(data || []);
+    };
+    loadMessages();
+    const channel = supabase.channel(`inv-msgs-${userId}-${selectedUser.founderId}`)
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages" }, (payload) => {
+        const msg = payload.new as any;
+        if ((msg.sender_id === userId && msg.receiver_id === selectedUser.founderId) || (msg.sender_id === selectedUser.founderId && msg.receiver_id === userId)) {
+          setMessages((prev) => [...prev, msg]);
+        }
+      }).subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [selectedUser, userId]);
+
+  useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
+
+  const handleSend = async () => {
+    if (!newMsg.trim() || !selectedUser || sending) return;
+    setSending(true);
+    await supabase.from("messages").insert({ sender_id: userId, receiver_id: selectedUser.founderId, content: newMsg.trim() });
+    setNewMsg(""); setSending(false);
+  };
+
+  if (matchedUsers.length === 0) {
+    return (
+      <div className="text-center py-20">
+        <div className="w-14 h-14 rounded-2xl ghost-border bg-[rgba(255,255,255,0.03)] flex items-center justify-center mx-auto mb-4">
+          <span className="material-symbols-outlined text-white/20">mail</span>
         </div>
-        <MatchScoreRing score={startup.matchScore} />
+        <p className="font-body text-white/60 font-semibold">No messages yet</p>
+        <p className="font-body text-white/30 text-[0.75rem] mt-1">Get matched with a startup to start chatting</p>
       </div>
-      <p className="text-[#D2D2D2] mb-4" style={{ fontSize: "13.5px", lineHeight: 1.65 }}>{startup.pitch}</p>
-      <div className="flex flex-wrap gap-1.5 mb-4">
-        {startup.tags?.map((tag: string) => (<span key={tag} className="px-2 py-0.5 rounded text-[#8A8A9A]" style={{ fontSize: "11px", fontWeight: 500, background: "rgba(255,255,255,0.03)" }}>{tag}</span>))}
+    );
+  }
+
+  return (
+    <div className="flex gap-4 h-[500px]">
+      <div className="w-[240px] shrink-0 rounded-xl overflow-hidden glass-card ghost-border">
+        <div className="p-4 ghost-border-b"><p className="font-label text-[10px] tracking-[0.1em] text-white/40 uppercase font-bold">Conversations</p></div>
+        <div className="overflow-y-auto h-[calc(100%-52px)] no-scrollbar">
+          {matchedUsers.map((u) => (
+            <button key={u.founderId} onClick={() => setSelectedUser(u)}
+              className={`w-full flex items-center gap-3 px-4 py-3 transition-all ${selectedUser?.founderId === u.founderId ? "bg-[rgba(255,255,255,0.08)] text-white" : "text-white/50 hover:bg-[rgba(255,255,255,0.03)]"}`}>
+              <div className="w-8 h-8 rounded-lg ghost-border bg-[rgba(255,255,255,0.05)] flex items-center justify-center shrink-0">
+                <span className="text-[11px] font-bold text-white/60">{u.initials}</span>
+              </div>
+              <span className="truncate text-[0.875rem] font-medium">{u.name}</span>
+            </button>
+          ))}
+        </div>
       </div>
-      <div className="flex items-center gap-4 mb-5 pb-5 border-b border-white/[0.04]">
-        <div className="flex items-center gap-1 text-[#555]" style={{ fontSize: "12px" }}><MapPin size={12} /> {startup.location}</div>
-        <div className="flex items-center gap-1 text-[#6C8EFF]/70" style={{ fontSize: "12px", fontWeight: 600 }}><DollarSign size={12} /> {startup.fundingNeeded}</div>
+      <div className="flex-1 rounded-xl glass-card ghost-border flex flex-col">
+        {selectedUser ? (
+          <>
+            <div className="p-4 ghost-border-b flex items-center gap-3 bg-black/60">
+              <div className="w-1.5 h-1.5 rounded-full bg-white animate-pulse"></div>
+              <p className="font-body text-[0.875rem] font-semibold text-white">{selectedUser.name}</p>
+            </div>
+            <div className="flex-1 overflow-y-auto p-4 space-y-4 no-scrollbar">
+              {messages.map((msg) => (
+                <div key={msg.id} className={`flex ${msg.sender_id === userId ? "justify-end" : "justify-start"}`}>
+                  <div className={`max-w-[80%] rounded-2xl px-5 py-3 text-[0.875rem] font-body ${msg.sender_id === userId ? "bg-white text-black rounded-tr-none" : "glass-card-high ghost-border text-white/80 rounded-tl-none"}`}>
+                    {msg.content}
+                    <p className={`mt-2 text-[9px] font-label uppercase tracking-[0.1em] ${msg.sender_id === userId ? "text-black/40" : "text-white/30"}`}>
+                      {new Date(msg.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                    </p>
+                  </div>
+                </div>
+              ))}
+              <div ref={messagesEndRef} />
+            </div>
+            <div className="p-4 bg-black/80 ghost-border-t">
+              <div className="flex items-center gap-3 bg-[rgba(255,255,255,0.02)] ghost-border p-2 pr-2 pl-5 rounded-full focus-within:bg-[rgba(255,255,255,0.05)] transition-colors">
+                <input value={newMsg} onChange={(e) => setNewMsg(e.target.value)} onKeyDown={(e) => e.key === "Enter" && handleSend()} placeholder="Type a message..."
+                  className="flex-1 bg-transparent border-none font-body text-[0.875rem] focus:ring-0 text-white placeholder-white/20 outline-none" />
+                <button onClick={handleSend} disabled={sending || !newMsg.trim()} className="w-8 h-8 rounded-full bg-white flex items-center justify-center hover:opacity-90 transition-opacity disabled:opacity-50">
+                  <span className="material-symbols-outlined text-black text-[18px]">arrow_upward</span>
+                </button>
+              </div>
+            </div>
+          </>
+        ) : (
+          <div className="flex-1 flex items-center justify-center text-white/30 font-body text-[0.875rem]">Select a conversation</div>
+        )}
       </div>
-      <div className="flex items-center gap-2">
-        <button onClick={() => onRequest(startup.id)} className="group relative flex-1 py-2.5 rounded-xl overflow-hidden" style={{ fontSize: "12px", fontWeight: 600 }}>
-          <div className="absolute inset-0 bg-gradient-to-r from-[#6C8EFF] to-[#38BDF8] group-hover:shadow-[0_0_20px_rgba(108,142,255,0.3)] transition-all" />
-          <span className="relative text-white flex items-center justify-center gap-1.5"><Send size={13} /> Request Access</span>
-        </button>
-        <button onClick={() => onSave(startup.id)} className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${startup.saved ? "text-[#6C8EFF]" : "text-[#555] hover:text-white hover:bg-white/[0.04]"}`} style={startup.saved ? { background: "rgba(108,142,255,0.1)", border: "1px solid rgba(108,142,255,0.15)" } : { border: "1px solid rgba(255,255,255,0.06)" }}>
-          <Heart size={15} fill={startup.saved ? "#6C8EFF" : "none"} />
-        </button>
-      </div>
-    </GlassCard>
+    </div>
   );
 }
 
 export function InvestorDashboard() {
+  const navigate = useNavigate();
+  const { user, profile, loading: authLoading, refreshProfile } = useAuth();
   const [activeTab, setActiveTab] = useState("feed");
   const [startups, setStartups] = useState<any[]>([]);
   const [requestsSent, setRequestsSent] = useState<any[]>([]);
+  const [requestedStartupIds, setRequestedStartupIds] = useState<Set<string>>(new Set());
   const [matches, setMatches] = useState<any[]>([]);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  const [user, setUser] = useState(JSON.parse(localStorage.getItem("user") || "{}"));
+  const [feedLoading, setFeedLoading] = useState(true);
+  const [toastMsg, setToastMsg] = useState("");
+  const [profileForm, setProfileForm] = useState({ first_name: "", last_name: "", email: "", city: "", investment_range: "", bio: "" });
+  const [profileSaving, setProfileSaving] = useState(false);
+  const [profileMsg, setProfileMsg] = useState("");
+
+  useEffect(() => { if (!authLoading && !user) navigate("/login"); }, [authLoading, user, navigate]);
+
+  const loadData = async () => {
+    if (!user) return;
+    setFeedLoading(true);
+    const { data: feedData } = await supabase.from("startups").select("*");
+    if (feedData) {
+      setStartups(feedData.map((d: any) => ({
+        id: d.id, custom_id: d.custom_id, industry: d.industry, stage: d.stage, location: d.location,
+        fundingNeeded: d.funding_needed, pitch: d.pitch, saved: false, tags: d.tags || []
+      })));
+    }
+    const { data: reqs } = await supabase.from("access_requests").select("*, startup:startups(custom_id, industry, id)").eq("investor_id", user.id);
+    if (reqs) { setRequestsSent(reqs); setRequestedStartupIds(new Set(reqs.map((r: any) => r.startup_id))); }
+    const { data: mData } = await supabase.from("access_requests").select("*, startup:startups(industry, id, founder_id)").eq("investor_id", user.id).eq("status", "approved");
+    if (mData) {
+      const founderIds = [...new Set(mData.map((m: any) => m.startup?.founder_id).filter(Boolean))];
+      let founderProfiles: any = {};
+      if (founderIds.length > 0) {
+        const { data: founders } = await supabase.from("profiles").select("*").in("id", founderIds);
+        if (founders) founderProfiles = Object.fromEntries(founders.map((f: any) => [f.id, f]));
+      }
+      setMatches(mData.map((m: any) => {
+        const founder = founderProfiles[m.startup?.founder_id] || {};
+        return { ...m, founderName: founder.first_name ? `${founder.first_name} ${founder.last_name || ""}`.trim() : (founder.email || "Founder"), founderInitials: `${(founder.first_name || "F")[0]}${(founder.last_name || "")[0] || ""}`.toUpperCase(), founderId: m.startup?.founder_id };
+      }));
+    }
+    setFeedLoading(false);
+  };
+
+  useEffect(() => { if (user?.id) loadData(); }, [user?.id]);
+  useEffect(() => {
+    if (!profile || !user) return;
+    const loadInvestorData = async () => {
+      const { data: investorData } = await supabase.from("investors").select("*").eq("id", user.id).single();
+      setProfileForm({ first_name: profile.first_name || "", last_name: profile.last_name || "", email: profile.email || "", city: profile.city || "", investment_range: investorData?.investment_range || "", bio: investorData?.bio || "" });
+    };
+    loadInvestorData();
+  }, [profile, user]);
 
   useEffect(() => {
-    async function loadData() {
-      // Load Feed
-      const { data: feedData } = await supabase.from('startups').select('*');
-      if (feedData) {
-         setStartups(feedData.map((d: any) => ({
-           id: d.id, industry: d.industry, stage: d.stage, location: d.location, 
-           fundingNeeded: d.funding_needed, pitch: d.pitch, matchScore: 88, saved: false, tags: d.tags || []
-         })));
-      }
-
-      if (user.id) {
-        // Load Requests Sent
-        const { data: reqs } = await supabase.from('access_requests')
-          .select('*, startup:startups(industry, id)')
-          .eq('investor_id', user.id);
-        if (reqs) setRequestsSent(reqs);
-
-        // Load Matches (Approved requests)
-        const { data: mData } = await supabase.from('access_requests')
-          .select('*, startup:startups(industry, id, founder:founder(*))')
-          .eq('investor_id', user.id)
-          .eq('status', 'approved');
-        if (mData) setMatches(mData);
-      }
-    }
-    loadData();
-  }, [user.id]);
+    const channel = supabase.channel("investor-feed").on("postgres_changes", { event: "INSERT", schema: "public", table: "startups" }, () => { loadData(); }).subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [user?.id]);
 
   const toggleSave = (id: string) => setStartups((p) => p.map((s) => (s.id === id ? { ...s, saved: !s.saved } : s)));
-  
   const handleRequest = async (startupId: string) => {
-     if (user.id) {
-       await supabase.from('access_requests').insert({
-         startup_id: startupId,
-         investor_id: user.id
-       });
-       alert('Access Request sent!');
-     }
+    if (!user?.id) return;
+    const { error } = await supabase.from("access_requests").insert({ startup_id: startupId, investor_id: user.id });
+    if (error) { setToastMsg(error.code === "23505" ? "You already sent a request for this startup." : `Error: ${error.message}`); }
+    else { setToastMsg("Access Request sent successfully!"); setRequestedStartupIds((prev) => new Set([...prev, startupId])); loadData(); }
+    setTimeout(() => setToastMsg(""), 3000);
   };
+  const handleSaveProfile = async () => {
+    if (!user) return;
+    setProfileSaving(true); setProfileMsg("");
+    try {
+      const { error: profErr } = await supabase.from("profiles").update({ first_name: profileForm.first_name, last_name: profileForm.last_name, city: profileForm.city, updated_at: new Date().toISOString() }).eq("id", user.id);
+      if (profErr) throw profErr;
+      const { error: invErr } = await supabase.from("investors").update({ investment_range: profileForm.investment_range, bio: profileForm.bio }).eq("id", user.id);
+      if (invErr) throw invErr;
+      await refreshProfile();
+      setProfileMsg("Profile saved successfully!");
+    } catch (err: any) { setProfileMsg(`Error: ${err.message}`); }
+    setProfileSaving(false);
+  };
+
   const savedStartups = startups.filter((s) => s.saved);
   const filteredStartups = searchQuery ? startups.filter((s) => s.industry.toLowerCase().includes(searchQuery.toLowerCase()) || s.pitch.toLowerCase().includes(searchQuery.toLowerCase())) : startups;
+  const matchedUsersForChat = matches.map((m) => ({ founderId: m.founderId, name: m.founderName, initials: m.founderInitials }));
 
-  const inputStyle: React.CSSProperties = { fontSize: "14px", background: "rgba(10,14,26,0.8)", border: "1px solid rgba(255,255,255,0.04)", backdropFilter: "blur(8px)" };
+  if (authLoading) return <div className="min-h-screen bg-black flex items-center justify-center"><span className="material-symbols-outlined text-white/20 text-4xl animate-pulse">sync</span></div>;
+
+  const userName = profile ? `${profile.first_name || ""} ${profile.last_name || ""}`.trim() || "Investor" : "Investor";
 
   return (
-    <div className="min-h-screen bg-[#080B16] pt-[72px] flex">
-      <DashboardSidebar items={sidebarItems} activeTab={activeTab} setActiveTab={setActiveTab} isOpen={sidebarOpen} setIsOpen={setSidebarOpen} userName="Sarah Chen" userInitials="SC" userRole="Investor" />
+    <div className="min-h-screen bg-black pt-[72px] flex">
+      <DashboardSidebar items={sidebarItems} activeTab={activeTab} setActiveTab={setActiveTab} isOpen={sidebarOpen} setIsOpen={setSidebarOpen} userName={userName} userRole="Tier 1 Investor" portalLabel="Investor" />
+
+      {/* Toast */}
+      {toastMsg && (
+        <div className={`fixed top-20 right-4 z-50 px-4 py-3 rounded-xl shadow-xl backdrop-blur-xl font-body text-sm font-semibold text-white ${toastMsg.startsWith("Error") ? "bg-[rgba(255,180,171,0.9)]" : "bg-[rgba(255,255,255,0.9)] !text-black"}`}>
+          {toastMsg}
+        </div>
+      )}
 
       <main className="flex-1 min-w-0">
-        <div className="sticky top-[72px] z-20 border-b border-white/[0.04] px-5 lg:px-8 py-4 flex items-center justify-between gap-4" style={{ background: "rgba(8,11,22,0.92)", backdropFilter: "blur(20px)" }}>
-          <div className="flex items-center gap-3 min-w-0">
-            <button className="lg:hidden w-9 h-9 rounded-lg bg-white/[0.04] flex items-center justify-center text-white shrink-0" onClick={() => setSidebarOpen(true)}><Menu size={16} /></button>
-            <div className="min-w-0">
-              <h1 className="text-white truncate" style={{ fontSize: "18px", fontWeight: 700, letterSpacing: "-0.02em" }}>{sidebarItems.find((i) => i.id === activeTab)?.label}</h1>
-              <p className="text-[#555] hidden sm:block" style={{ fontSize: "12px" }}>Discover and invest in private startups</p>
-            </div>
+        <header className="sticky top-[72px] z-20 ghost-border-b h-16 flex items-center justify-between px-8 bg-black/80 backdrop-blur-xl">
+          <div className="flex items-center gap-3">
+            <button className="lg:hidden w-9 h-9 rounded-lg bg-[rgba(255,255,255,0.05)] flex items-center justify-center text-white" onClick={() => setSidebarOpen(true)}>
+              <span className="material-symbols-outlined text-[20px]">menu</span>
+            </button>
+            <h1 className="font-headline text-xl font-bold tracking-tight text-white">{sidebarItems.find((i) => i.id === activeTab)?.label}</h1>
           </div>
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex items-center gap-4">
             {activeTab === "feed" && (
-              <div className="hidden sm:flex items-center gap-2 px-3 py-2 rounded-xl w-[200px]" style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.04)" }}>
-                <Search size={14} className="text-[#444]" />
-                <input type="text" placeholder="Search startups..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="bg-transparent text-white placeholder-[#444] focus:outline-none w-full" style={{ fontSize: "13px" }} />
+              <div className="hidden sm:flex items-center gap-2 bg-[rgba(255,255,255,0.03)] ghost-border px-4 py-1.5 rounded-full">
+                <span className="material-symbols-outlined text-white/40 text-sm">search</span>
+                <input type="text" placeholder="Filter by industry, stage..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="bg-transparent border-none text-xs font-body focus:ring-0 text-white w-48 placeholder-white/20 outline-none" />
               </div>
             )}
-            <button className="relative w-9 h-9 rounded-lg bg-white/[0.04] flex items-center justify-center text-[#8A8A9A] hover:text-white hover:bg-white/[0.08] transition-all">
-              <Bell size={16} /><span className="absolute top-2 right-2 w-1.5 h-1.5 rounded-full bg-[#6C8EFF]" />
+            <button className="relative p-2 rounded-full ghost-border text-white/60 hover:text-white transition-colors">
+              <span className="material-symbols-outlined">notifications</span>
+              <span className="absolute top-1 right-1 w-1.5 h-1.5 bg-white rounded-full"></span>
             </button>
           </div>
-        </div>
+        </header>
 
-        <div className="p-5 lg:p-8">
+        <div className="p-8 lg:p-12 space-y-12 max-w-7xl mx-auto">
           {activeTab === "feed" && (
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-              <div className="mb-6 p-4 rounded-xl flex items-center gap-3" style={{ background: "rgba(108,142,255,0.04)", border: "1px solid rgba(108,142,255,0.08)" }}>
-                <div className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0" style={{ background: "rgba(108,142,255,0.1)" }}><Cpu size={16} className="text-[#6C8EFF]" /></div>
-                <div>
-                  <p className="text-white" style={{ fontSize: "13px", fontWeight: 600 }}>AI-curated feed based on your investment thesis</p>
-                  <p className="text-[#555]" style={{ fontSize: "12px" }}>Showing {filteredStartups.length} startups ranked by match score</p>
+            <>
+              {feedLoading ? (
+                <div className="flex justify-center py-20"><span className="material-symbols-outlined text-white/20 text-4xl animate-pulse">sync</span></div>
+              ) : filteredStartups.length === 0 ? (
+                <div className="text-center py-20">
+                  <div className="w-14 h-14 rounded-2xl ghost-border bg-[rgba(255,255,255,0.03)] flex items-center justify-center mx-auto mb-4">
+                    <span className="material-symbols-outlined text-white/20">grid_view</span>
+                  </div>
+                  <p className="font-body text-white/60 font-semibold">No startups yet</p>
                 </div>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
-                {filteredStartups.map((s, i) => (
-                  <motion.div key={s.id} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04 }}>
-                    <StartupCard startup={s} onSave={toggleSave} onRequest={handleRequest} />
-                  </motion.div>
-                ))}
-              </div>
-            </motion.div>
+              ) : (
+                <>
+                  <div className="flex justify-between items-end">
+                    <div>
+                      <h3 className="text-[2rem] font-headline font-bold text-white tracking-[-0.04em]">Verified Opportunities</h3>
+                      <p className="font-body text-sm text-white/40">Curated deal flow matching your investment thesis.</p>
+                    </div>
+                    <button className="font-label text-[10px] font-bold text-white/60 hover:text-white uppercase tracking-[0.1em] ghost-border-b pb-1 transition-colors">View All</button>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {filteredStartups.map((s) => (
+                      <StartupCard key={s.id} startup={s} onSave={toggleSave} onRequest={handleRequest} requestedIds={requestedStartupIds} />
+                    ))}
+                  </div>
+                </>
+              )}
+            </>
           )}
 
           {activeTab === "saved" && (
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-              {savedStartups.length === 0 ? (
-                <div className="text-center py-20"><div className="w-14 h-14 rounded-2xl bg-white/[0.03] flex items-center justify-center mx-auto mb-4"><Bookmark size={24} className="text-[#333]" /></div><p className="text-[#8A8A9A]" style={{ fontSize: "15px", fontWeight: 600 }}>No saved startups</p><p className="text-[#444] mt-1" style={{ fontSize: "13px" }}>Save startups from the feed to review later</p></div>
-              ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">{savedStartups.map((s) => <StartupCard key={s.id} startup={s} onSave={toggleSave} onRequest={handleRequest} />)}</div>
-              )}
-            </motion.div>
+            savedStartups.length === 0 ? (
+              <div className="text-center py-20">
+                <div className="w-14 h-14 rounded-2xl ghost-border bg-[rgba(255,255,255,0.03)] flex items-center justify-center mx-auto mb-4">
+                  <span className="material-symbols-outlined text-white/20">bookmark</span>
+                </div>
+                <p className="font-body text-white/60 font-semibold">No saved startups</p>
+                <p className="font-body text-white/30 text-[0.75rem] mt-1">Save startups from the feed to review later</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {savedStartups.map((s) => <StartupCard key={s.id} startup={s} onSave={toggleSave} onRequest={handleRequest} requestedIds={requestedStartupIds} />)}
+              </div>
+            )
           )}
 
           {activeTab === "requests" && (
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-3">
+            <div className="space-y-4">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-[2rem] font-headline font-bold text-white tracking-[-0.04em]">Active Inquiries</h3>
+                <div className="flex items-center gap-4">
+                  <span className="font-label text-[10px] font-bold text-white/40 uppercase tracking-[0.1em]">Sort by: Recent</span>
+                </div>
+              </div>
               {requestsSent.length === 0 ? (
-                <div className="text-center py-20"><div className="w-14 h-14 rounded-2xl bg-white/[0.03] flex items-center justify-center mx-auto mb-4"><Send size={24} className="text-[#333]" /></div><p className="text-[#8A8A9A]" style={{ fontSize: "15px", fontWeight: 600 }}>No requests sent</p></div>
-              ) : requestsSent.map((req, i) => (
-                <motion.div key={req.id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04 }}>
-                  <GlassCard hover={false}>
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-4">
-                        <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.06)" }}><Building2 size={16} className="text-[#8A8A9A]" /></div>
-                        <div><p className="text-white" style={{ fontSize: "14px", fontWeight: 600, fontFamily: "monospace" }}>{req.startup?.id || 'STR-NEW'}</p><p className="text-[#555]" style={{ fontSize: "13px" }}>{req.startup?.industry}</p></div>
+                <div className="text-center py-20">
+                  <div className="w-14 h-14 rounded-2xl ghost-border bg-[rgba(255,255,255,0.03)] flex items-center justify-center mx-auto mb-4">
+                    <span className="material-symbols-outlined text-white/20">rocket_launch</span>
+                  </div>
+                  <p className="font-body text-white/60 font-semibold">No requests sent</p>
+                </div>
+              ) : (
+                <div className="glass-card ghost-border rounded-xl overflow-hidden">
+                  {/* Table header */}
+                  <div className="w-full flex text-left font-label text-[10px] uppercase tracking-[0.1em] font-bold text-white/40 px-8 py-5 ghost-border-b">
+                    <div className="w-1/4">Startup</div>
+                    <div className="w-1/4">Type</div>
+                    <div className="w-1/4">Status</div>
+                    <div className="w-1/4">Date</div>
+                  </div>
+                  <div className="flex flex-col gap-1 px-4">
+                    {requestsSent.map((req) => (
+                      <div key={req.id} className="group flex items-center hover:bg-[rgba(255,255,255,0.03)] rounded-lg transition-colors px-4 py-4">
+                        <div className="w-1/4 flex items-center gap-3">
+                          <div className="w-8 h-8 rounded bg-[rgba(255,255,255,0.05)] ghost-border flex items-center justify-center">
+                            <span className="material-symbols-outlined text-sm text-white/40">layers</span>
+                          </div>
+                          <span className="font-body text-sm font-semibold text-white">{req.startup?.custom_id || "Startup"}</span>
+                        </div>
+                        <div className="w-1/4"><span className="font-body text-[0.875rem] text-white/60">{req.startup?.industry || "Access Request"}</span></div>
+                        <div className="w-1/4 flex items-center gap-2">
+                          <div className={`w-1 h-3 rounded-[1px] ${req.status === "approved" ? "bg-white" : req.status === "rejected" ? "bg-white/10" : "bg-white/40"}`}></div>
+                          <span className={`font-body text-[0.875rem] font-medium tracking-wide ${req.status === "approved" ? "text-white" : req.status === "rejected" ? "text-white/40" : "text-white/60"}`}>
+                            {req.status.charAt(0).toUpperCase() + req.status.slice(1)}
+                          </span>
+                        </div>
+                        <div className="w-1/4"><span className="font-body text-[0.875rem] text-white/40">{new Date(req.created_at).toLocaleDateString()}</span></div>
                       </div>
-                      <div className="flex items-center gap-3">
-                        <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg ${req.status === "approved" ? "text-[#22c55e]" : req.status === "rejected" ? "text-red-400" : "text-yellow-400"}`} style={{ fontSize: "11px", fontWeight: 600, background: req.status === "approved" ? "rgba(34,197,94,0.1)" : req.status === "rejected" ? "rgba(248,113,113,0.1)" : "rgba(250,204,21,0.1)" }}>
-                          <div className={`w-1.5 h-1.5 rounded-full ${req.status === "approved" ? "bg-[#22c55e]" : req.status === "rejected" ? "bg-red-400" : "bg-yellow-400"}`} />{req.status.charAt(0).toUpperCase() + req.status.slice(1)}
-                        </span>
-                        <span className="text-[#444] flex items-center gap-1" style={{ fontSize: "11px" }}><Clock size={11} /> {new Date(req.created_at).toLocaleDateString()}</span>
-                      </div>
-                    </div>
-                  </GlassCard>
-                </motion.div>
-              ))}
-            </motion.div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
           )}
 
           {activeTab === "matches" && (
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-3">
+            <div className="space-y-4">
               {matches.length === 0 ? (
-                <div className="text-center py-20"><div className="w-14 h-14 rounded-2xl bg-white/[0.03] flex items-center justify-center mx-auto mb-4"><Handshake size={24} className="text-[#333]" /></div><p className="text-[#8A8A9A]" style={{ fontSize: "15px", fontWeight: 600 }}>No matches yet</p></div>
-              ) : matches.map((m) => (
-                <GlassCard key={m.id} hover={false}>
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                    <div className="flex items-center gap-4">
-                      <div className="w-12 h-12 rounded-xl flex items-center justify-center" style={{ background: "linear-gradient(135deg, rgba(108,142,255,0.15), rgba(56,189,248,0.08))", border: "1px solid rgba(108,142,255,0.12)" }}><Handshake size={20} className="text-[#6C8EFF]" /></div>
-                      <div>
-                        <p className="text-white" style={{ fontSize: "15px", fontWeight: 600 }}>
-                          {m.startup?.founder?.first_name ? `${m.startup.founder.first_name} ${m.startup.founder.last_name}` : (m.startup?.founder?.email || "Waitlist Entry")}
-                        </p>
-                        <p className="text-[#555]" style={{ fontSize: "13px" }}>
-                          {m.startup?.industry} · Matched on {m.updated_at ? new Date(m.updated_at).toLocaleDateString() : "N/A"}
-                        </p>
-                      </div>
-                    </div>
-                    <button className="group relative px-5 py-2.5 rounded-xl overflow-hidden" style={{ fontSize: "12px", fontWeight: 600 }}>
-                      <div className="absolute inset-0 bg-gradient-to-r from-[#6C8EFF] to-[#38BDF8] group-hover:shadow-[0_0_20px_rgba(108,142,255,0.3)] transition-all" />
-                      <span className="relative text-white flex items-center gap-1.5"><MessageSquare size={13} /> Start Chat</span>
-                    </button>
+                <div className="text-center py-20">
+                  <div className="w-14 h-14 rounded-2xl ghost-border bg-[rgba(255,255,255,0.03)] flex items-center justify-center mx-auto mb-4">
+                    <span className="material-symbols-outlined text-white/20">query_stats</span>
                   </div>
-                </GlassCard>
-              ))}
-            </motion.div>
-          )}
-
-          {activeTab === "messages" && (
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-              <div className="text-center py-20"><div className="w-14 h-14 rounded-2xl bg-white/[0.03] flex items-center justify-center mx-auto mb-4"><MessageSquare size={24} className="text-[#333]" /></div><p className="text-[#8A8A9A]" style={{ fontSize: "15px", fontWeight: 600 }}>No messages yet</p><p className="text-[#444] mt-1" style={{ fontSize: "13px" }}>Get matched with a startup to start chatting</p></div>
-            </motion.div>
-          )}
-
-          {activeTab === "profile" && (
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-              <GlassCard hover={false}>
-                <h3 className="text-white mb-1" style={{ fontSize: "17px", fontWeight: 700 }}>Investor Profile</h3>
-                <p className="text-[#555] mb-6" style={{ fontSize: "13px" }}>Your profile is visible to founders when you request access</p>
-                <div className="space-y-5 max-w-lg">
-                  {[{ l: "NAME", v: "Sarah Chen" }, { l: "EMAIL", v: "sarah@invest.com" }, { l: "CITY", v: "San Francisco" }, { l: "INVESTMENT RANGE", v: "$25,000 – $100,000" }].map((f) => (
-                    <div key={f.l}><label className="block text-[#555] mb-2" style={{ fontSize: "11px", fontWeight: 600, letterSpacing: "0.06em" }}>{f.l}</label><input type="text" defaultValue={f.v} className="w-full px-4 py-3.5 rounded-xl text-white focus:outline-none focus:ring-1 focus:ring-[#6C8EFF]/30 transition-all" style={inputStyle} /></div>
-                  ))}
-                  <div><label className="block text-[#555] mb-2" style={{ fontSize: "11px", fontWeight: 600, letterSpacing: "0.06em" }}>BIO</label><textarea defaultValue="Angel investor focused on SaaS and AI startups. 10+ portfolio companies." rows={3} className="w-full px-4 py-3.5 rounded-xl text-white focus:outline-none focus:ring-1 focus:ring-[#6C8EFF]/30 transition-all resize-none" style={inputStyle} /></div>
-                  <button className="group relative px-6 py-3 rounded-xl overflow-hidden" style={{ fontSize: "13px", fontWeight: 600 }}>
-                    <div className="absolute inset-0 bg-gradient-to-r from-[#6C8EFF] to-[#38BDF8] group-hover:shadow-[0_0_20px_rgba(108,142,255,0.3)] transition-all" />
-                    <span className="relative text-white">Save Changes</span>
+                  <p className="font-body text-white/60 font-semibold">No matches yet</p>
+                </div>
+              ) : matches.map((m) => (
+                <div key={m.id} className="group glass-card ghost-border p-6 rounded-xl flex items-center justify-between hover:bg-[rgba(255,255,255,0.05)] transition-all duration-300">
+                  <div className="flex items-center gap-6">
+                    <div className="w-12 h-12 rounded-lg bg-[rgba(255,255,255,0.03)] ghost-border flex items-center justify-center">
+                      <span className="material-symbols-outlined text-white/60">handshake</span>
+                    </div>
+                    <div>
+                      <h4 className="font-sans text-[1rem] font-semibold text-white">{m.founderName}</h4>
+                      <p className="font-body text-[0.75rem] text-white/50 mt-1">{m.startup?.industry} · Matched on {m.updated_at ? new Date(m.updated_at).toLocaleDateString() : "N/A"}</p>
+                    </div>
+                  </div>
+                  <button onClick={() => setActiveTab("messages")} className="px-3 py-1.5 rounded-full ghost-border font-label text-[10px] font-bold text-white uppercase tracking-[0.1em] hover:bg-white hover:text-black transition-all">
+                    Message
                   </button>
                 </div>
-              </GlassCard>
-            </motion.div>
+              ))}
+            </div>
+          )}
+
+          {activeTab === "messages" && <InvestorMessagesPanel userId={user?.id || ""} matchedUsers={matchedUsersForChat} />}
+
+          {activeTab === "profile" && (
+            <div className="glass-card ghost-border rounded-2xl p-8 md:p-10 max-w-xl">
+              <h3 className="font-headline text-[1.5rem] font-bold text-white mb-2">Investor Profile</h3>
+              <p className="font-body text-white/40 text-[0.875rem] mb-8">Your profile is visible to founders when you request access</p>
+              {profileMsg && (
+                <div className={`mb-6 p-4 rounded-xl font-body text-sm ghost-border ${profileMsg.startsWith("Error") ? "bg-[rgba(255,180,171,0.1)] text-[#ffb4ab]" : "bg-[rgba(255,255,255,0.05)] text-white"}`}>{profileMsg}</div>
+              )}
+              <div className="flex flex-col gap-5">
+                {[
+                  { l: "FIRST NAME", k: "first_name" as const },
+                  { l: "LAST NAME", k: "last_name" as const },
+                  { l: "EMAIL", k: "email" as const, disabled: true },
+                  { l: "CITY", k: "city" as const },
+                  { l: "INVESTMENT RANGE", k: "investment_range" as const },
+                ].map((f) => (
+                  <div key={f.l} className="flex flex-col gap-3">
+                    <label className="font-label text-[0.75rem] tracking-[0.1em] text-white/40 uppercase">{f.l}</label>
+                    <input type="text" value={profileForm[f.k]} disabled={f.disabled} onChange={(e) => setProfileForm({ ...profileForm, [f.k]: e.target.value })} className="w-full bg-black ghost-border rounded-xl px-4 py-4 text-[0.875rem] text-white focus:outline-none focus:border-white/40 transition-colors disabled:opacity-50" />
+                  </div>
+                ))}
+                <div className="flex flex-col gap-3">
+                  <label className="font-label text-[0.75rem] tracking-[0.1em] text-white/40 uppercase">BIO</label>
+                  <textarea value={profileForm.bio} onChange={(e) => setProfileForm({ ...profileForm, bio: e.target.value })} rows={3} className="w-full bg-black ghost-border rounded-xl px-4 py-4 text-[0.875rem] text-white focus:outline-none focus:border-white/40 transition-colors resize-none" />
+                </div>
+                <button onClick={handleSaveProfile} disabled={profileSaving} className="w-full bg-white text-black mt-2 py-4 rounded-full font-bold text-[14px] font-sans button-glow hover:bg-white/90 transition-all duration-300 disabled:opacity-50">
+                  {profileSaving ? "Saving..." : "Save Changes"}
+                </button>
+              </div>
+            </div>
           )}
         </div>
       </main>

@@ -1,7 +1,6 @@
 import { supabase } from '../lib/supabase';
 
 export const checkHealth = async () => {
-  // Using Supabase, the health check can just verify client initialization
   return { status: 'ok', message: 'Supabase client running' };
 };
 
@@ -36,7 +35,6 @@ export const signup = async (data: {
 
   if (authError) throw new Error(authError.message);
   
-  // Return a structure compatible with the existing frontend
   return { 
     success: true, 
     user: { 
@@ -58,102 +56,136 @@ export const login = async (email: string, password?: string) => {
 
   if (authError) throw new Error(authError.message);
 
-  const [profile, investorProfile] = await Promise.all([
-    supabase.from('founder').select('*').eq('id', authData.user.id).single(),
-    supabase.from('investor').select('*').eq('id', authData.user.id).single()
-  ]);
+  // Fetch from the unified profiles table
+  const { data: profile, error: profileError } = await supabase
+    .from('profiles')
+    .select('*')
+    .eq('id', authData.user.id)
+    .single();
 
-  const existingProfile = profile.data || investorProfile.data;
-  const role = profile.data ? 'FOUNDER' : (investorProfile.data ? 'INVESTOR' : 'FOUNDER');
+  if (profileError || !profile) {
+    // Profile might not exist yet if trigger hasn't fired; use auth metadata
+    const meta = authData.user.user_metadata;
+    return {
+      success: true,
+      user: {
+        id: authData.user.id,
+        email: authData.user.email,
+        name: `${meta?.first_name || ''} ${meta?.last_name || ''}`.trim() || 'User',
+        role: meta?.role || 'FOUNDER'
+      }
+    };
+  }
 
   return { 
     success: true, 
     user: { 
-      id: authData.user.id, 
-      email: authData.user.email, 
-      name: existingProfile ? (existingProfile.first_name || 'Waitlist Entry') : '', 
-      role: existingProfile ? (existingProfile.role || role) : role
+      id: profile.id, 
+      email: profile.email, 
+      name: `${profile.first_name || ''} ${profile.last_name || ''}`.trim() || 'User', 
+      role: profile.role || 'FOUNDER'
     } 
   };
 };
 
 export const fetchUsers = async () => {
-  const [founders, investors] = await Promise.all([
-    supabase.from('founder').select('*'),
-    supabase.from('investor').select('*')
-  ]);
-  return [
-    ...(founders.data || []).map((f: any) => ({ ...f, role: 'FOUNDER', first_name: f.first_name || 'Waitlist', last_name: f.last_name || 'Entry' })),
-    ...(investors.data || []).map((i: any) => ({ ...i, role: 'INVESTOR', first_name: i.first_name || 'Waitlist', last_name: i.last_name || 'Entry' }))
-  ];
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('*')
+    .in('role', ['FOUNDER', 'INVESTOR'])
+    .order('created_at', { ascending: false });
+
+  if (error) throw new Error(error.message);
+  return (data || []).map((p: any) => ({
+    ...p,
+    first_name: p.first_name || 'User',
+    last_name: p.last_name || '',
+  }));
 };
 
 export const fetchUser = async (id: string) => {
-  // Check both tables
-  const [f, i] = await Promise.all([
-    supabase.from('founder').select('*').eq('id', id).single(),
-    supabase.from('investor').select('*').eq('id', id).single()
-  ]);
-  if (f.data) return { ...f.data, role: 'FOUNDER' };
-  if (i.data) return { ...i.data, role: 'INVESTOR' };
-  throw new Error("User not found");
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('*')
+    .eq('id', id)
+    .single();
+
+  if (error || !data) throw new Error("User not found");
+  return data;
 };
 
 export const updateUser = async (id: string, updateData: any) => {
-  // Determine which table based on current role or just try both
-  const { role, ...cleanData } = updateData;
-  const table = role?.toLowerCase() === 'investor' ? 'investor' : 'founder';
-  const { data, error } = await supabase
-    .from(table)
-    .update(cleanData)
-    .eq('id', id)
-    .select()
-    .single();
-    
-  if (error) throw new Error(error.message);
+  const { role, industry, investment_range, bio, ...profileData } = updateData;
+  
+  // Update the profiles table
+  if (Object.keys(profileData).length > 0) {
+    const { error } = await supabase
+      .from('profiles')
+      .update({ ...profileData, updated_at: new Date().toISOString() })
+      .eq('id', id);
+    if (error) throw new Error(error.message);
+  }
+
+  // Update role-specific table
+  if (role === 'FOUNDER' || role === 'founder') {
+    const founderUpdate: any = {};
+    if (industry !== undefined) founderUpdate.industry = industry;
+    if (bio !== undefined) founderUpdate.bio = bio;
+    if (Object.keys(founderUpdate).length > 0) {
+      await supabase.from('founders').update(founderUpdate).eq('id', id);
+    }
+  } else if (role === 'INVESTOR' || role === 'investor') {
+    const investorUpdate: any = {};
+    if (investment_range !== undefined) investorUpdate.investment_range = investment_range;
+    if (bio !== undefined) investorUpdate.bio = bio;
+    if (Object.keys(investorUpdate).length > 0) {
+      await supabase.from('investors').update(investorUpdate).eq('id', id);
+    }
+  }
+
+  // Return updated profile
+  const { data } = await supabase.from('profiles').select('*').eq('id', id).single();
   return data;
 };
 
 export const deleteProfile = async (id: string) => {
-  // Delete from both to be safe
-  await Promise.all([
-    supabase.from('founder').delete().eq('id', id),
-    supabase.from('investor').delete().eq('id', id)
-  ]);
+  // Deleting from profiles cascades to founders/investors
+  const { error } = await supabase.from('profiles').delete().eq('id', id);
+  if (error) throw new Error(error.message);
   return { success: true };
 };
 
 export const fetchAllProfiles = async () => {
-  const [foundersRes, investorsRes] = await Promise.all([
-    supabase.from('founder').select('*').order('created_at', { ascending: false }),
-    supabase.from('investor').select('*').order('created_at', { ascending: false })
-  ]);
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('*')
+    .order('created_at', { ascending: false });
 
-  const fData = (foundersRes.data || []).map((f: any) => ({ ...f, role: 'FOUNDER', first_name: f.first_name || 'Waitlist', last_name: f.last_name || 'Entry' }));
-  const iData = (investorsRes.data || []).map((i: any) => ({ ...i, role: 'INVESTOR', first_name: i.first_name || 'Waitlist', last_name: i.last_name || 'Entry' }));
-
-  return [...fData, ...iData].sort((a, b) => 
-    new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-  );
+  if (error) throw new Error(error.message);
+  return (data || []).map((p: any) => ({
+    ...p,
+    first_name: p.first_name || 'User',
+    last_name: p.last_name || '',
+  }));
 };
 
 export const fetchGlobalStats = async () => {
-  const [foundersRes, investorsRes] = await Promise.all([
-    supabase.from('founder').select('id'),
-    supabase.from('investor').select('id')
-  ]);
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('role');
 
-  const founders = foundersRes.data || [];
-  const investors = investorsRes.data || [];
+  if (error) throw new Error(error.message);
+
+  const profiles = data || [];
+  const founders = profiles.filter((p: any) => p.role === 'FOUNDER').length;
+  const investors = profiles.filter((p: any) => p.role === 'INVESTOR').length;
   
-  const stats = {
-    total: founders.length + investors.length,
-    founders: founders.length,
-    investors: investors.length,
-    admins: 0 // No admins tracked in these tables
+  return {
+    total: founders + investors,
+    founders,
+    investors,
+    admins: profiles.filter((p: any) => p.role === 'ADMIN').length,
   };
-  
-  return stats;
 };
 
 // Simple email masking for sensitive data display

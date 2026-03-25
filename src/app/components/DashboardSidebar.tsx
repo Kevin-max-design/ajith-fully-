@@ -1,9 +1,9 @@
-import { Link } from "react-router";
-import { LogOut } from "lucide-react";
+import { useNavigate } from "react-router";
 import { type ComponentType } from "react";
+import { useAuth } from "./AuthContext";
 
 interface SidebarItem {
-  icon: ComponentType<{ size?: number; className?: string }>;
+  icon: string; // Material Symbols icon name
   label: string;
   id: string;
   badge?: number;
@@ -16,13 +16,21 @@ interface DashboardSidebarProps {
   isOpen: boolean;
   setIsOpen: (open: boolean) => void;
   userName: string;
-  userInitials: string;
   userRole: string;
+  portalLabel?: string;
 }
 
 export function DashboardSidebar({
-  items, activeTab, setActiveTab, isOpen, setIsOpen, userName, userInitials, userRole,
+  items, activeTab, setActiveTab, isOpen, setIsOpen, userName, userRole, portalLabel = "Portal",
 }: DashboardSidebarProps) {
+  const { signOut } = useAuth();
+  const navigate = useNavigate();
+
+  const handleSignOut = async () => {
+    await signOut();
+    navigate("/");
+  };
+
   return (
     <>
       {isOpen && (
@@ -30,53 +38,44 @@ export function DashboardSidebar({
       )}
 
       <aside
-        className={`fixed lg:sticky top-[72px] left-0 z-40 w-[260px] h-[calc(100vh-72px)] flex flex-col transition-transform duration-300 lg:translate-x-0 ${
+        className={`fixed lg:sticky top-0 left-0 z-50 w-64 h-screen flex flex-col py-6 px-6 transition-transform duration-300 lg:translate-x-0 ghost-border-r bg-black ${
           isOpen ? "translate-x-0" : "-translate-x-full"
         }`}
-        style={{
-          background: "linear-gradient(180deg, rgba(10,14,26,0.98), rgba(8,11,22,0.98))",
-          backdropFilter: "blur(20px)",
-          borderRight: "1px solid rgba(255,255,255,0.04)",
-        }}
       >
-        {/* User profile */}
-        <div className="p-5 border-b border-white/[0.04]">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#6C8EFF]/25 to-[#38BDF8]/10 border border-[#6C8EFF]/15 flex items-center justify-center">
-              <span className="text-[#6C8EFF]" style={{ fontSize: "13px", fontWeight: 700 }}>{userInitials}</span>
+        {/* Brand */}
+        <div className="text-2xl font-headline font-black tracking-tighter text-white mb-8 mt-2">STARHUB</div>
+
+        {/* User info */}
+        <div className="mb-8">
+          <div className="flex items-center gap-3 px-3 py-2">
+            <div className="w-10 h-10 rounded-full ghost-border bg-[rgba(255,255,255,0.08)] flex items-center justify-center">
+              <span className="text-white font-bold text-sm">{userName.charAt(0)}</span>
             </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-white truncate" style={{ fontSize: "14px", fontWeight: 600, letterSpacing: "-0.01em" }}>{userName}</p>
-              <div className="flex items-center gap-1.5">
-                <div className="w-1.5 h-1.5 rounded-full bg-[#22c55e]" />
-                <p className="text-[#555]" style={{ fontSize: "11px", fontWeight: 500 }}>{userRole}</p>
-              </div>
+            <div>
+              <p className="text-white font-semibold font-body text-[0.875rem]">{userName}</p>
+              <p className="text-white/40 text-[10px] font-label uppercase tracking-[0.1em] mt-0.5">{userRole} • {portalLabel}</p>
             </div>
           </div>
         </div>
 
         {/* Nav items */}
-        <nav className="flex-1 p-3 space-y-0.5 overflow-y-auto">
+        <nav className="flex flex-col gap-1 flex-1 relative">
           {items.map((item) => {
             const isActive = activeTab === item.id;
             return (
               <button
                 key={item.id}
                 onClick={() => { setActiveTab(item.id); setIsOpen(false); }}
-                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all relative ${
-                  isActive ? "text-[#6C8EFF]" : "text-[#8A8A9A] hover:text-white hover:bg-white/[0.03]"
+                className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-300 text-left ${
+                  isActive
+                    ? "text-white bg-[rgba(255,255,255,0.05)] font-semibold"
+                    : "text-white/50 hover:text-white/80 hover:bg-[rgba(255,255,255,0.05)]"
                 }`}
-                style={{ fontSize: "13.5px", fontWeight: isActive ? 600 : 500 }}
               >
-                {isActive && (
-                  <div className="absolute inset-0 rounded-xl border border-[#6C8EFF]/15" style={{ background: "rgba(108,142,255,0.06)", backdropFilter: "blur(8px)" }} />
-                )}
-                <item.icon size={17} className="relative" />
-                <span className="flex-1 text-left relative">{item.label}</span>
+                <span className="material-symbols-outlined text-[20px]">{item.icon}</span>
+                <span className="text-sm font-sans tracking-tight flex-1">{item.label}</span>
                 {item.badge && item.badge > 0 && (
-                  <span className="relative px-2 py-0.5 rounded-md bg-gradient-to-r from-[#6C8EFF] to-[#38BDF8] text-white" style={{ fontSize: "10px", fontWeight: 700, minWidth: "20px", textAlign: "center" }}>
-                    {item.badge}
-                  </span>
+                  <span className="px-2 py-0.5 rounded-full bg-white text-black text-[10px] font-bold">{item.badge}</span>
                 )}
               </button>
             );
@@ -84,14 +83,14 @@ export function DashboardSidebar({
         </nav>
 
         {/* Bottom */}
-        <div className="p-3 border-t border-white/[0.04]">
-          <Link
-            to="/"
-            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-[#555] hover:text-white hover:bg-white/[0.03] transition-all"
-            style={{ fontSize: "13.5px", fontWeight: 500 }}
+        <div className="mt-auto flex flex-col gap-1 ghost-border-t pt-6">
+          <button
+            onClick={handleSignOut}
+            className="flex items-center gap-3 px-4 py-2 text-white/40 hover:text-white transition-opacity"
           >
-            <LogOut size={17} /> Sign Out
-          </Link>
+            <span className="material-symbols-outlined text-[20px]">logout</span>
+            <span className="text-sm font-sans tracking-tight">Logout</span>
+          </button>
         </div>
       </aside>
     </>
